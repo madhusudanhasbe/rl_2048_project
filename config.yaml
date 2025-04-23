@@ -1,0 +1,26 @@
+# config.yaml
+# Configuration for the 2048 RL environment and demonstration
+
+environment:
+  board_size: 4
+
+rendering:
+  # Set to true to see the animation during a single episode run
+  animate_episode: true
+  # Delay in seconds between frames during animation
+  animation_delay: 0.3
+
+# Parameters for evaluation (optional, but good practice)
+evaluation:
+  num_episodes: 10 # Number of episodes to run for evaluation
+  policy_to_evaluate: 'heuristic' # 'random' or 'heuristic' (or others you define)
+
+# Placeholder for agent hyperparameters if you add learning agents
+# agent:
+#   learning_rate: 0.001
+#   gamma: 0.99
+#   epsilon_start: 1.0
+#   epsilon_decay: 0.995
+#   epsilon_min: 0.01
+#   replay_buffer_size: 10000
+#   batch_size: 32

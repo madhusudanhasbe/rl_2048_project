@@ -1,0 +1,403 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2048 Reinforcement Learning</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .sidebar {
+            width: 300px;
+        }
+        .main-content {
+            flex-grow: 1;
+        }
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-gap: 10px;
+            margin: 20px 0;
+        }
+        .tile {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+        .bg-0 { background-color: #cdc1b4; color: #776e65; }
+        .bg-2 { background-color: #eee4da; color: #776e65; }
+        .bg-4 { background-color: #ede0c8; color: #776e65; }
+        .bg-8 { background-color: #f2b179; color: #f9f6f2; }
+        .bg-16 { background-color: #f59563; color: #f9f6f2; }
+        .bg-32 { background-color: #f67c5f; color: #f9f6f2; }
+        .bg-64 { background-color: #f65e3b; color: #f9f6f2; }
+        .bg-128 { background-color: #edcf72; color: #f9f6f2; }
+        .bg-256 { background-color: #edcc61; color: #f9f6f2; }
+        .bg-512 { background-color: #edc850; color: #f9f6f2; }
+        .bg-1024 { background-color: #edc53f; color: #f9f6f2; }
+        .bg-2048 { background-color: #edc22e; color: #f9f6f2; }
+        .settings {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .btn {
+            padding: 10px 15px;
+            background-color: #8f7a66;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background-color: #9f8a76;
+        }
+        .chart-container {
+            margin-top: 20px;
+            height: 300px;
+        }
+        .slider {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .agent-select {
+            padding: 10px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .progress-bar {
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>2048 Reinforcement Learning</h1>
+        
+        <div class="container">
+            <div class="sidebar">
+                <div class="settings">
+                    <h2>Settings</h2>
+                    
+                    <label for="agent-type">Agent Type:</label>
+                    <select id="agent-type" v-model="selectedAgentType" class="agent-select">
+                        <option v-for="(models, agentType) in agentTypes" :value="agentType">{{ agentType }}</option>
+                    </select>
+                    
+                    <div v-if="selectedAgentType && agentTypes[selectedAgentType].length > 1">
+                        <label for="model-episode">Model Episode:</label>
+                        <select id="model-episode" v-model="selectedModel" class="agent-select">
+                            <option v-for="model in agentTypes[selectedAgentType]" :value="model">Episode {{ model.episode }}</option>
+                        </select>
+                    </div>
+                    
+                    <label for="episodes">Number of Episodes:</label>
+                    <input type="range" id="episodes" v-model.number="episodes" min="1" max="100" class="slider">
+                    <span>{{ episodes }}</span>
+                    
+                    <div class="controls">
+                        <button class="btn" @click="runAgent" :disabled="running">Run Agent</button>
+                        <button class="btn" @click="playEpisode" :disabled="running">Play Single Episode</button>
+                    </div>
+                    
+                    <div v-if="running" class="progress-bar">
+                        <div class="progress-fill" :style="{width: progress + '%'}"></div>
+                    </div>
+                </div>
+                
+                <div class="results" v-if="results">
+                    <h2>Results</h2>
+                    <p><strong>Mean Score:</strong> {{ results.mean_score.toFixed(2) }}</p>
+                    <p><strong>Max Score:</strong> {{ results.max_score }}</p>
+                    <p><strong>Max Tile:</strong> {{ results.max_tile }}</p>
+                    
+                    <h3>Tile Counts:</h3>
+                    <p v-for="(count, tile) in results.tile_counts">
+                        <strong>{{ tile }}:</strong> {{ count }}/{{ episodes }} ({{ (count / episodes * 100).toFixed(1) }}%)
+                    </p>
+                </div>
+            </div>
+            
+            <div class="main-content">
+                <div v-if="currentState" class="game-display">
+                    <h2>Game Visualization</h2>
+                    <div class="game-board">
+                        <div v-for="(row, rowIndex) in currentState" v-for="(cell, colIndex) in row" 
+                             class="tile" :class="'bg-' + cell">
+                            {{ cell !== 0 ? cell : '' }}
+                        </div>
+                    </div>
+                    
+                    <div class="controls">
+                        <button class="btn" @click="prevState" :disabled="stateIndex <= 0">Previous</button>
+                        <button class="btn" @click="nextState" :disabled="stateIndex >= stateHistory.length - 1">Next</button>
+                        <button class="btn" @click="autoPlay" :disabled="autoPlaying">Auto Play</button>
+                        <button class="btn" @click="stopAutoPlay" :disabled="!autoPlaying">Stop</button>
+                    </div>
+                    
+                    <p v-if="episodeData">
+                        <strong>Action:</strong> {{ ['Up', 'Down', 'Left', 'Right'][episodeData.actions[stateIndex - 1]] || 'N/A' }}
+                        <strong>Reward:</strong> {{ episodeData.rewards[stateIndex - 1] || 0 }}
+                    </p>
+                </div>
+                
+                <div class="chart-container">
+                    <h2>Metrics</h2>
+                    <div v-if="metricsLoaded">
+                        <canvas ref="scoreChart"></canvas>
+                        <canvas ref="tileChart"></canvas>
+                    </div>
+                    <div v-else>
+                        <button class="btn" @click="loadMetrics">Load Metrics</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                agentTypes: {{ agent_types|tojson }},
+                selectedAgentType: Object.keys({{ agent_types|tojson }})[0],
+                selectedModel: null,
+                episodes: 10,
+                running: false,
+                progress: 0,
+                results: null,
+                stateHistory: [],
+                stateIndex: 0,
+                currentState: null,
+                episodeData: null,
+                autoPlaying: false,
+                autoPlayInterval: null,
+                metricsLoaded: false,
+                scoreChart: null,
+                tileChart: null
+            },
+            created() {
+                // Set initial selected model
+                if (this.selectedAgentType) {
+                    this.selectedModel = this.agentTypes[this.selectedAgentType][0];
+                }
+            },
+            methods: {
+                async runAgent() {
+                    this.running = true;
+                    this.progress = 0;
+                    const progressStep = 100 / this.episodes;
+                    
+                    try {
+                        const response = await axios.post('/run', {
+                            agent_type: this.selectedAgentType,
+                            model_path: this.selectedModel?.path || null,
+                            episodes: this.episodes
+                        });
+                        
+                        this.results = response.data;
+                        this.stateHistory = response.data.states.map(state => state);
+                        this.stateIndex = 0;
+                        this.currentState = this.stateHistory[0];
+                        this.episodeData = null;
+                        
+                        // Update progress in increments
+                        for (let i = 0; i < this.episodes; i++) {
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            this.progress += progressStep;
+                        }
+                    } catch (error) {
+                        console.error('Error running agent:', error);
+                        alert('Error running agent. Check console for details.');
+                    } finally {
+                        this.running = false;
+                        this.progress = 100;
+                    }
+                },
+                
+                async playEpisode() {
+                    this.running = true;
+                    this.progress = 0;
+                    
+                    try {
+                        const response = await axios.post('/play_episode', {
+                            agent_type: this.selectedAgentType,
+                            model_path: this.selectedModel?.path || null
+                        });
+                        
+                        this.episodeData = response.data;
+                        this.stateHistory = response.data.states;
+                        this.stateIndex = 0;
+                        this.currentState = this.stateHistory[0];
+                        
+                        // Simulate progress
+                        for (let i = 0; i < 100; i++) {
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                            this.progress = i + 1;
+                        }
+                    } catch (error) {
+                        console.error('Error playing episode:', error);
+                        alert('Error playing episode. Check console for details.');
+                    } finally {
+                        this.running = false;
+                        this.progress = 100;
+                    }
+                },
+                
+                prevState() {
+                    if (this.stateIndex > 0) {
+                        this.stateIndex--;
+                        this.currentState = this.stateHistory[this.stateIndex];
+                    }
+                },
+                
+                nextState() {
+                    if (this.stateIndex < this.stateHistory.length - 1) {
+                        this.stateIndex++;
+                        this.currentState = this.stateHistory[this.stateIndex];
+                    }
+                },
+                
+                autoPlay() {
+                    if (!this.autoPlaying) {
+                        this.autoPlaying = true;
+                        this.autoPlayInterval = setInterval(() => {
+                            this.nextState();
+                            if (this.stateIndex >= this.stateHistory.length - 1) {
+                                this.stopAutoPlay();
+                            }
+                        }, 300);
+                    }
+                },
+                
+                stopAutoPlay() {
+                    if (this.autoPlayInterval) {
+                        clearInterval(this.autoPlayInterval);
+                        this.autoPlayInterval = null;
+                        this.autoPlaying = false;
+                    }
+                },
+                
+                async loadMetrics() {
+                    try {
+                        const response = await axios.get(`/metrics/${this.selectedAgentType}`);
+                        const metrics = response.data;
+                        
+                        this.renderScoreChart(metrics);
+                        this.renderTileChart(metrics);
+                        this.metricsLoaded = true;
+                    } catch (error) {
+                        console.error('Error loading metrics:', error);
+                        alert('Error loading metrics. Check console for details.');
+                    }
+                },
+                
+                renderScoreChart(metrics) {
+                    const ctx = this.$refs.scoreChart.getContext('2d');
+                    
+                    if (this.scoreChart) {
+                        this.scoreChart.destroy();
+                    }
+                    
+                    this.scoreChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: metrics.map(m => m.episode),
+                            datasets: [{
+                                label: 'Mean Score',
+                                data: metrics.map(m => m.mean_score),
+                                borderColor: 'rgb(75, 192, 192)',
+                                tension: 0.1
+                            }]
+                        }
+                    });
+                },
+                
+                renderTileChart(metrics) {
+                    const ctx = this.$refs.tileChart.getContext('2d');
+                    
+                    if (this.tileChart) {
+                        this.tileChart.destroy();
+                    }
+                    
+                    const tileData = {
+                        "2048": metrics.map(m => m.tile_counts["2048"] / 10 * 100),
+                        "1024": metrics.map(m => m.tile_counts["1024"] / 10 * 100),
+                        "512": metrics.map(m => m.tile_counts["512"] / 10 * 100),
+                        "256": metrics.map(m => m.tile_counts["256"] / 10 * 100),
+                        "128": metrics.map(m => m.tile_counts["128"] / 10 * 100)
+                    };
+                    
+                    this.tileChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: metrics.map(m => m.episode),
+                            datasets: [
+                                {
+                                    label: '2048 Tile %',
+                                    data: tileData["2048"],
+                                    borderColor: 'rgb(255, 99, 132)',
+                                    tension: 0.1
+                                },
+                                {
+                                    label: '1024 Tile %',
+                                    data: tileData["1024"],
+                                    borderColor: 'rgb(54, 162, 235)',
+                                    tension: 0.1
+                                },
+                                {
+                                    label: '512 Tile %',
+                                    data: tileData["512"],
+                                    borderColor: 'rgb(255, 205, 86)',
+                                    tension: 0.1
+                                }
+                            ]
+                        }
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
